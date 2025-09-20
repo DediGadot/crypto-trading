@@ -109,14 +109,33 @@ class BinanceDataFeed:
             # Check cache first
             cache_key = f"{symbol.replace('/', '_')}_{timeframe}_{since_ms}_{limit}"
             cache_file = self.cache_dir / f"{cache_key}.parquet"
+            csv_cache_file = cache_file.with_suffix('.csv')
 
             if cache_file.exists():
-                # Load from cache
                 df = pd.read_parquet(cache_file)
+                cache_backend = 'parquet'
                 if self.logger:
                     self.logger.log_system_event(
                         'data_feed', 'cache_hit',
-                        {'symbol': symbol, 'cache_file': str(cache_file)}
+                        {
+                            'symbol': symbol,
+                            'cache_file': str(cache_file),
+                            'cache_backend': cache_backend,
+                        }
+                    )
+            elif csv_cache_file.exists():
+                df = pd.read_csv(csv_cache_file)
+                cache_backend = 'csv'
+                if 'timestamp' in df.columns:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                if self.logger:
+                    self.logger.log_system_event(
+                        'data_feed', 'cache_hit',
+                        {
+                            'symbol': symbol,
+                            'cache_file': str(csv_cache_file),
+                            'cache_backend': cache_backend,
+                        }
                     )
             else:
                 # Fetch from exchange
@@ -133,8 +152,25 @@ class BinanceDataFeed:
                 ])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
-                # Cache the data
-                df.to_parquet(cache_file)
+                cache_backend = 'parquet'
+                cache_path_used = cache_file
+                try:
+                    df.to_parquet(cache_file)
+                except (ImportError, ValueError, AttributeError) as parquet_error:
+                    cache_backend = 'csv'
+                    cache_path_used = csv_cache_file
+                    df.to_csv(cache_path_used, index=False)
+                    if self.logger:
+                        self.logger.log_system_event(
+                            'data_feed', 'cache_fallback',
+                            {
+                                'symbol': symbol,
+                                'timeframe': timeframe,
+                                'reason': str(parquet_error)[:200],
+                                'cache_backend': cache_backend,
+                                'cache_file': str(cache_path_used),
+                            }
+                        )
 
                 if self.logger:
                     self.logger.log_system_event(
@@ -143,7 +179,8 @@ class BinanceDataFeed:
                             'symbol': symbol,
                             'timeframe': timeframe,
                             'candles': len(df),
-                            'cache_file': str(cache_file)
+                            'cache_backend': cache_backend,
+                            'cache_file': str(cache_path_used),
                         }
                     )
 

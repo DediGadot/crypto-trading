@@ -28,6 +28,9 @@ from ..config.config_loader import get_config
 from ..logging_system import TradeLogger
 
 
+logger = logging.getLogger(__name__)
+
+
 class PortfolioOptimizer:
     """Advanced portfolio optimization using modern portfolio theory"""
 
@@ -148,10 +151,13 @@ class PortfolioOptimizer:
         else:
             raise ValueError(f"Unknown risk model: {method}")
 
-    def optimize_mean_variance(self, prices: pd.DataFrame,
-                             objective: str = 'max_sharpe',
-                             constraints: Optional[Dict[str, Any]] = None,
-                             **kwargs) -> Dict[str, Any]:
+    def optimize_mean_variance(
+        self,
+        prices: pd.DataFrame,
+        objective: str = 'max_sharpe',
+        constraints: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
         """Optimize portfolio using mean-variance optimization
 
         Args:
@@ -172,90 +178,104 @@ class PortfolioOptimizer:
                 {'min_weight': 0.10, 'max_weight': 0.30},   # Most strict
             ]
 
-            for i, constraint_set in enumerate(constraint_sets):
-                try:
-                    print(f"   Trying constraint set {i+1}: min={constraint_set['min_weight']:.2f}, max={constraint_set['max_weight']:.2f}")
+            user_constraints = constraints or {}
+            last_error: Optional[Exception] = None
 
-                    # Calculate expected returns and risk model
+            for attempt_index, constraint_set in enumerate(constraint_sets, start=1):
+                try:
+                    logger.info(
+                        "Optimizing with constraint set %d (min=%.2f, max=%.2f)",
+                        attempt_index,
+                        constraint_set['min_weight'],
+                        constraint_set['max_weight'],
+                    )
+
                     mu = self.calculate_expected_returns(
                         prices,
                         kwargs.get('return_method', self.default_return_model),
-                        **kwargs
+                        **kwargs,
                     )
                     S = self.calculate_risk_model(
                         prices,
                         kwargs.get('risk_method', self.default_risk_model),
-                        **kwargs
+                        **kwargs,
                     )
 
-                # Data quality checks
-                if mu.isna().any() or (mu == 0).all():
-                    print(f"   Warning: Issues with expected returns")
-                    continue
+                    if mu.isna().any() or np.isclose(mu.values, 0.0).all():
+                        logger.warning("Expected returns are degenerate; skipping constraint set %d", attempt_index)
+                        continue
 
-                if np.linalg.cond(S) > 1e12:  # Check condition number
-                    print(f"   Warning: Ill-conditioned covariance matrix (cond={np.linalg.cond(S):.2e})")
-                    # Use shrinkage
-                    S = S + np.eye(len(S)) * 1e-6
+                    condition_number = float(np.linalg.cond(S))
+                    if condition_number > 1e12:
+                        logger.warning(
+                            "Ill-conditioned covariance matrix detected (cond=%.2e); applying diagonal shrinkage",
+                            condition_number,
+                        )
+                        S = S + np.eye(len(S)) * 1e-6
 
-                # Create efficient frontier
-                ef = EfficientFrontier(mu, S)
+                    ef = EfficientFrontier(mu, S)
 
-                # Add constraints if not most relaxed
-                if i > 0:
-                    ef.add_constraint(lambda w: w >= constraint_set['min_weight'])
-                    ef.add_constraint(lambda w: w <= constraint_set['max_weight'])
+                    if attempt_index > 1:
+                        ef.add_constraint(lambda w: w >= constraint_set['min_weight'])
+                        ef.add_constraint(lambda w: w <= constraint_set['max_weight'])
 
-                # Optimize based on objective
-                if objective == 'max_sharpe':
-                    weights = ef.max_sharpe()
-                elif objective == 'min_volatility':
-                    weights = ef.min_volatility()
-                elif objective == 'efficient_return':
-                    target_return = kwargs.get('target_return', 0.10)
-                    weights = ef.efficient_return(target_return)
-                elif objective == 'efficient_risk':
-                    target_volatility = kwargs.get('target_volatility', 0.15)
-                    weights = ef.efficient_risk(target_volatility)
-                else:
-                    raise ValueError(f"Unknown objective: {objective}")
+                    if 'min_weight' in user_constraints:
+                        ef.add_constraint(lambda w: w >= user_constraints['min_weight'])
+                    if 'max_weight' in user_constraints:
+                        ef.add_constraint(lambda w: w <= user_constraints['max_weight'])
 
-                # Get portfolio performance
-                performance = ef.portfolio_performance(verbose=False)
+                    if objective == 'max_sharpe':
+                        ef.max_sharpe()
+                    elif objective == 'min_volatility':
+                        ef.min_volatility()
+                    elif objective == 'efficient_return':
+                        target_return = kwargs.get('target_return', 0.10)
+                        ef.efficient_return(target_return)
+                    elif objective == 'efficient_risk':
+                        target_volatility = kwargs.get('target_volatility', 0.15)
+                        ef.efficient_risk(target_volatility)
+                    else:
+                        raise ValueError(f"Unknown objective: {objective}")
 
-                # Clean weights (remove tiny allocations)
-                cleaned_weights = ef.clean_weights()
+                    performance = ef.portfolio_performance(verbose=False)
+                    cleaned_weights = ef.clean_weights()
 
-                print(f"   Success with constraint set {i+1}")
-                break  # Success, exit loop
+                    return {
+                        'success': True,
+                        'weights': cleaned_weights,
+                        'expected_return': performance[0],
+                        'volatility': performance[1],
+                        'sharpe_ratio': performance[2],
+                        'method': 'mean_variance',
+                        'objective': objective,
+                        'assets': list(prices.columns),
+                        'constraint_set_used': attempt_index,
+                        'optimization_date': datetime.now(),
+                    }
 
-            except Exception as constraint_error:
-                print(f"   Failed with constraint set {i+1}: {str(constraint_error)[:100]}")
-                if i == len(constraint_sets) - 1:  # Last attempt
-                    raise constraint_error
-                continue
+                except Exception as constraint_error:  # noqa: BLE001
+                    last_error = constraint_error
+                    logger.warning(
+                        "Constraint set %d failed: %s",
+                        attempt_index,
+                        str(constraint_error)[:200],
+                        exc_info=logger.isEnabledFor(logging.DEBUG),
+                    )
 
-        return {
-            'success': True,
-            'weights': cleaned_weights,
-            'expected_return': performance[0],
-            'volatility': performance[1],
-            'sharpe_ratio': performance[2],
-            'method': 'mean_variance',
-            'objective': objective,
-            'assets': list(prices.columns),
-            'constraint_set_used': i+1,
-            'optimization_date': datetime.now()
-        }
+            if last_error:
+                raise last_error
+            raise RuntimeError("Mean-variance optimization failed: no viable constraint set")
 
-    except Exception as e:
+        except Exception as exc:  # noqa: BLE001
             if self.logger:
                 self.logger.log_error(
-                    'portfolio_optimizer', 'mv_optimization_failed',
-                    f"Mean-variance optimization failed: {e}",
-                    exception=e
+                    'portfolio_optimizer',
+                    'mv_optimization_failed',
+                    f"Mean-variance optimization failed: {exc}",
+                    exception=exc,
                 )
-            return {'success': False, 'error': str(e)}
+            logger.error("Mean-variance optimization failed: %s", exc)
+            return {'success': False, 'error': str(exc)}
 
     def optimize_hierarchical_risk_parity(self, prices: pd.DataFrame,
                                         **kwargs) -> Dict[str, Any]:

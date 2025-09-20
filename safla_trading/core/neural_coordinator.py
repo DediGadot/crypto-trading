@@ -30,7 +30,13 @@ logger = logging.getLogger(__name__)
 class NeuralCoordinator:
     """Coordinates all neural components in the SAFLA system."""
 
-    def __init__(self, input_dim: int, output_dim: int, memory_manager: Optional[MemoryManager] = None):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        memory_manager: Optional[MemoryManager] = None,
+        auto_start: bool = True,
+    ):
         """Initialize neural coordinator.
 
         Args:
@@ -40,6 +46,7 @@ class NeuralCoordinator:
         """
         self.config = get_config()
         self.memory_manager = memory_manager
+        self._auto_start = auto_start
         self.error_handler = ErrorHandler(logger)
 
         # Setup circuit breakers for critical components
@@ -97,7 +104,8 @@ class NeuralCoordinator:
         # Register feedback observers
         self.feedback_manager.add_feedback_observer(self._on_feedback_received)
 
-        self._start_coordination_loop()
+        if self._auto_start:
+            self._start_coordination_loop()
 
         logger.info("NeuralCoordinator initialized with all SAFLA components")
 
@@ -322,6 +330,7 @@ class NeuralCoordinator:
             System health dictionary
         """
         health = {
+            'overall_health': self._get_state_safe('neural_health'),
             'overall_status': self._get_state_safe('neural_health'),
             'neural_network': self.health_monitor.check_neural_health(self.neural_network),
             'feedback_system': self.feedback_manager.get_system_status(),
@@ -722,6 +731,9 @@ class NeuralCoordinator:
 
     def _start_coordination_loop(self) -> None:
         """Start background coordination loop."""
+        if self.running:
+            return
+
         self.running = True
         self.coordination_thread = threading.Thread(target=self._coordination_loop, daemon=True)
         self.coordination_thread.start()
@@ -768,6 +780,7 @@ class NeuralCoordinator:
         # Shutdown coordination thread
         if self.coordination_thread and self.coordination_thread.is_alive():
             self.coordination_thread.join(timeout=2.0)
+        self.coordination_thread = None
 
         # Shutdown component systems
         self.feedback_manager.shutdown()
@@ -777,6 +790,18 @@ class NeuralCoordinator:
             self.memory_manager.shutdown()
 
         logger.info("NeuralCoordinator shutdown complete")
+
+    def start(self) -> None:
+        """Start the background coordination loop if it is not already running."""
+        self._start_coordination_loop()
+
+    def __enter__(self) -> "NeuralCoordinator":  # noqa: D401 - context manager convenience
+        if self._auto_start and not self.running:
+            self._start_coordination_loop()
+        return self
+
+    def __exit__(self, exc_type, exc, exc_tb) -> None:  # noqa: D401 - context manager convenience
+        self.shutdown()
 
 
 class PerformanceTracker:

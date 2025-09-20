@@ -260,8 +260,8 @@ class TradingSimulator:
         Returns:
             Simulated trade or None if execution failed
         """
-        # Calculate slippage
-        trade_value = quantity * market_price
+        # Calculate slippage and use executed notional for cost/commission math
+        trade_value = abs(quantity * market_price)
         slippage = self._calculate_slippage(trade_value)
 
         # Apply slippage
@@ -270,8 +270,8 @@ class TradingSimulator:
         else:
             execution_price = market_price * (1 - slippage)
 
-        # Calculate commission
-        commission = trade_value * self.commission_rate
+        executed_notional = abs(execution_price * quantity)
+        commission = executed_notional * self.commission_rate
         self.total_commission_paid += commission
 
         # Create trade record
