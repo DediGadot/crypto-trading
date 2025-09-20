@@ -613,6 +613,86 @@ class PortfolioOptimizer:
         """
         return list(self.portfolios.keys())
 
+    def optimize_portfolio(self, expected_returns: pd.Series,
+                         cov_matrix: pd.DataFrame,
+                         optimization_method: str = 'max_sharpe',
+                         **kwargs) -> Optional[Dict[str, float]]:
+        """Main portfolio optimization method - wrapper for specific algorithms
+
+        Args:
+            expected_returns: Expected returns for each asset
+            cov_matrix: Covariance matrix
+            optimization_method: Optimization method to use
+            **kwargs: Additional parameters
+
+        Returns:
+            Optimal portfolio weights or None if optimization fails
+        """
+        try:
+            # Create price data from returns and covariance (for compatibility)
+            # This is a simplified approach for single-period optimization
+            assets = expected_returns.index.tolist()
+
+            # For mean-variance optimization, we need price data
+            # Create synthetic price data that would generate the given returns/covariance
+            np.random.seed(42)  # For reproducibility
+            n_periods = 252  # One year of daily data
+
+            # Generate synthetic returns that match the expected statistics
+            returns_data = np.random.multivariate_normal(
+                expected_returns.values / 252,  # Daily returns
+                cov_matrix.values / 252,        # Daily covariance
+                n_periods
+            )
+
+            # Convert to cumulative prices starting from 100
+            prices_data = np.cumprod(1 + returns_data, axis=0) * 100
+
+            # Create DataFrame
+            prices_df = pd.DataFrame(prices_data, columns=assets)
+
+            if optimization_method == 'max_sharpe':
+                result = self.optimize_mean_variance(
+                    prices_df,
+                    objective='max_sharpe',
+                    **kwargs
+                )
+            elif optimization_method == 'min_volatility':
+                result = self.optimize_mean_variance(
+                    prices_df,
+                    objective='min_volatility',
+                    **kwargs
+                )
+            elif optimization_method == 'hrp':
+                result = self.optimize_hierarchical_risk_parity(prices_df, **kwargs)
+            elif optimization_method == 'risk_parity':
+                # Equal risk contribution for all assets
+                risk_budgets = {asset: 1.0/len(assets) for asset in assets}
+                result = self.risk_budget_optimization(prices_df, risk_budgets)
+            else:
+                logger.error(f"Unknown optimization method: {optimization_method}")
+                return None
+
+            if result and result.get('success', False):
+                return result.get('weights', {})
+            else:
+                if self.logger:
+                    error_msg = result.get('error', 'Unknown optimization error')
+                    self.logger.log_error(
+                        'portfolio_optimizer', 'optimization_failed',
+                        f"Portfolio optimization failed: {error_msg}"
+                    )
+                return None
+
+        except Exception as e:
+            if self.logger:
+                self.logger.log_error(
+                    'portfolio_optimizer', 'optimize_portfolio_failed',
+                    f"Portfolio optimization wrapper failed: {e}",
+                    exception=e
+                )
+            return None
+
     def analyze_portfolio_performance(self, weights: Dict[str, float],
                                     prices: pd.DataFrame,
                                     benchmark_prices: Optional[pd.Series] = None) -> Dict[str, Any]:

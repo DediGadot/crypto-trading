@@ -1,0 +1,31 @@
+[
+  {
+    "timestamp": "2025-09-20 18:56:45.559531",
+    "results": {
+      "symbol": "BTC/USDT",
+      "data_period": {
+        "start": "2025-09-05 10:00:00",
+        "end": "2025-09-20 18:00:00",
+        "periods": 369
+      },
+      "strategy_performance": {
+        "total_return": -0.006584687415524204,
+        "sharpe_ratio": -8.552551580621047,
+        "psr": 6.385196009685743e-14,
+        "max_drawdown": -0.008322608948261615,
+        "total_trades": 6,
+        "win_rate": 0.0,
+        "transaction_costs": 492.9994737241768
+      },
+      "benchmark_performance": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "psr": 0,
+        "max_drawdown": 0
+      },
+      "alpha": -0.006584687415524204,
+      "signals_generated": 6,
+      "execution_success_rate": 1.0
+    }
+  }
+]
