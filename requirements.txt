@@ -9,6 +9,35 @@ click>=8.1.0
 torch>=2.1.0
 psutil>=5.9.0
 pydantic>=1.10.0
+
+# High-performance trading stack upgrades
+# Data & connectivity
+cryptofeed>=2.4.0
+polars>=0.20.0
+# Backtesting & research
+backtesting>=0.3.3
+statsforecast>=1.6.0
+prophet>=1.1.4
+darts>=0.27.0
+neuralforecast>=1.6.0
+# ML models
+xgboost>=2.0.0
+lightgbm>=4.0.0
+catboost>=1.2.0
+# Portfolio & risk
+pyportfolioopt>=1.5.4
+quantstats>=0.0.62
+pyfolio-reloaded>=0.9.3
+# Performance & ops
+numba>=0.58.0
+optuna>=3.5.0
+mlflow>=2.8.0
+hydra-core>=1.3.0
+# Additional utilities
+faiss-cpu>=1.7.4
+networkx>=3.2
+sqlalchemy>=2.0.0
+
 # Testing
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
