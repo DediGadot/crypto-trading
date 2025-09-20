@@ -1,0 +1,17 @@
+# LINUS-APPROVED DEPENDENCIES
+# Only what we actually need, not academic bloat
+
+# Core Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Market Data and Trading
+ccxt>=4.0.0
+aiohttp>=3.8.0
+
+# Configuration and Utilities
+pyyaml>=6.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

@@ -1,0 +1,152 @@
+# LINUS-APPROVED TRADING SYSTEM CONFIG
+# NO MAGIC NUMBERS. EVERY PARAMETER IS HERE.
+
+# Core System
+system:
+  name: "SimpleTradingSystem"  # Not "SAFLA Neural Consciousness Engine"
+  version: "1.0.0"
+  random_seed: 42
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+
+# Exchange Configuration
+exchange:
+  name: "binance"
+  sandbox: true  # Use testnet until proven working
+  rate_limit_per_minute: 1200
+  timeout_seconds: 30
+  retry_attempts: 3
+  retry_delay_seconds: 1
+
+  # Circuit breaker settings for resilience
+  circuit_breaker:
+    failure_threshold: 5      # Open after 5 consecutive failures
+    recovery_timeout: 30.0    # Try recovery after 30 seconds
+    success_threshold: 3      # Close after 3 successful recovery attempts
+
+# Trading Symbols
+symbols:
+  primary: ["BTC/USDT", "ETH/USDT"]
+  test: ["BTC/USDT"]  # Start with one symbol
+
+# Market Data
+market_data:
+  timeframe: "1m"  # Start simple - 1 minute candles
+  lookback_candles: 100  # How many candles to keep in memory
+  fetch_limit: 1000  # Max candles per request
+
+# Simulation Parameters
+simulation:
+  initial_balance_usd: 100000.0
+  commission_rate: 0.001  # 0.1% per trade (realistic for Binance)
+
+  # Slippage simulation (because markets aren't perfect)
+  slippage:
+    base_bps: 1  # 1 basis point base slippage
+    impact_coefficient: 0.1  # Additional slippage per $1000 trade
+    max_slippage_bps: 10  # Cap at 10 bps
+
+# Strategy Configuration - Simple Moving Average Crossover
+strategy:
+  type: "sma_crossover"
+
+  # Moving average periods
+  fast_period: 10
+  slow_period: 30
+
+  # Signal thresholds
+  entry_threshold_pct: 0.01  # 1% crossover minimum
+  exit_threshold_pct: 0.005  # 0.5% exit signal
+
+  # Position sizing
+  position_size_pct: 0.10  # 10% of balance per trade
+  max_position_size_usd: 10000  # Hard cap per position
+
+# Risk Management (The Important Stuff)
+risk:
+  # Position limits
+  max_open_positions: 3
+  max_portfolio_exposure_pct: 0.50  # 50% max exposure
+
+  # Stop losses
+  stop_loss_pct: 0.02  # 2% stop loss
+  take_profit_pct: 0.04  # 4% take profit (2:1 ratio)
+
+  # Daily limits
+  max_daily_loss_pct: 0.05  # 5% daily loss limit
+  max_daily_trades: 10
+
+  # Portfolio protection
+  max_drawdown_pct: 0.10  # 10% max drawdown
+
+# Logging Configuration (Proper Logging)
+logging:
+  # Log levels: trades, market_data, decisions, performance, errors
+
+  # File destinations
+  files:
+    trades: "logs/trades.jsonl"
+    market_data: "logs/market_data.jsonl"
+    decisions: "logs/decisions.jsonl"
+    performance: "logs/performance.jsonl"
+    errors: "logs/errors.jsonl"
+
+  # Rotation settings
+  max_file_size_mb: 100
+  backup_count: 10
+
+  # What to log
+  log_every_tick: false  # Would be too much for 1m data
+  log_every_decision: true
+  log_every_trade: true
+  log_performance_interval_seconds: 60
+
+# Performance Metrics
+metrics:
+  # Calculation windows (in number of trades)
+  sharpe_ratio_window: 30
+  win_rate_window: 20
+  max_drawdown_window: 100
+
+  # Reporting intervals
+  report_interval_trades: 10
+
+# Data Storage
+storage:
+  # Market data cache
+  cache_directory: "data/cache"
+  cache_retention_days: 30
+
+  # Trade history
+  trade_history_file: "data/trade_history.csv"
+
+  # Performance tracking
+  performance_file: "data/performance.csv"
+
+# Testing Configuration
+testing:
+  # Backtesting parameters
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+
+  # Paper trading
+  paper_trading: true
+
+  # Test data generation
+  generate_test_data: false
+  test_data_days: 7
+
+# Alert Thresholds (When Things Go Wrong)
+alerts:
+  # Portfolio alerts
+  drawdown_alert_pct: 0.05  # Alert at 5% drawdown
+  daily_loss_alert_pct: 0.03  # Alert at 3% daily loss
+
+  # System alerts
+  error_count_threshold: 5  # Alert after 5 errors
+  connection_timeout_threshold: 10  # Alert after 10 timeouts
+
+# Development Settings
+development:
+  debug_mode: false
+  profiling_enabled: false
+  test_mode: true  # Extra validation and checks
