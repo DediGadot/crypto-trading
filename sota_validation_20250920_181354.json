@@ -1,0 +1,51 @@
+{
+  "overall_score": 95.65217391304348,
+  "tests_passed": 22,
+  "tests_total": 23,
+  "test_results": {
+    "signal_alignment": {
+      "no_signals_during_warmup": true,
+      "signals_are_boolean": true,
+      "signals_properly_shifted": true,
+      "sufficient_warmup": true
+    },
+    "transaction_costs": {
+      "cost_in_reasonable_range": true,
+      "exchange_fee_positive": true,
+      "spread_cost_positive": true,
+      "total_cost_positive": true,
+      "reasonable_break_even": true,
+      "cost_bps": 25.0,
+      "break_even": 0.005
+    },
+    "triple_barrier": {
+      "labels_generated": true,
+      "valid_label_values": true,
+      "realistic_returns": true,
+      "barrier_diversity": true,
+      "balanced_barriers": "True",
+      "diverse_labels": true,
+      "labels_count": 42
+    },
+    "purged_walkforward": {
+      "splits_generated": false,
+      "no_leakage_detected": true,
+      "sufficient_train_size": true,
+      "sufficient_test_size": true,
+      "proper_temporal_order": true,
+      "splits_count": 0
+    },
+    "statistical_significance": {
+      "psr_calculated": true,
+      "psr_in_valid_range": "True",
+      "confidence_intervals": true,
+      "sufficient_data": true,
+      "comprehensive_metrics": true,
+      "statistically_significant": "False",
+      "psr": 0.4328145166569598,
+      "sharpe_ratio": -0.4861671127371019
+    }
+  },
+  "execution_time": 9.897379,
+  "timestamp": "2025-09-20T18:13:54.078584"
+}
