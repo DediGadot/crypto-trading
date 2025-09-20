@@ -105,11 +105,17 @@ class RiskManager:
 
         # Position size check
         if signal.signal in ['buy', 'sell'] and signal.quantity > 0:
+            is_position_reduction = (
+                signal.signal == 'sell'
+                and signal.symbol in self.positions
+                and self.positions[signal.symbol].quantity > 0
+                and signal.quantity <= abs(self.positions[signal.symbol].quantity) + 1e-9
+            )
             position_value = signal.price * signal.quantity
             risk_factors['position_value_usd'] = position_value
 
             # Max position size check
-            if position_value > self.max_position_size_usd:
+            if position_value > self.max_position_size_usd and not is_position_reduction:
                 adjusted_quantity = self.max_position_size_usd / signal.price
                 risk_factors['position_size_exceeded'] = True
 
@@ -140,12 +146,31 @@ class RiskManager:
                 risk_factors=risk_factors
             )
 
-        # Portfolio exposure check
+        # Portfolio exposure check (accounting for position reductions)
         total_exposure = self._calculate_portfolio_exposure()
-        new_exposure = total_exposure + (signal.price * signal.quantity)
-        exposure_pct = new_exposure / balance
+        current_symbol_exposure = 0.0
+        current_quantity = 0.0
+        current_price = signal.price
 
-        risk_factors['current_exposure_pct'] = total_exposure / balance
+        if signal.symbol in self.positions:
+            current_position = self.positions[signal.symbol]
+            current_quantity = current_position.quantity
+            current_price = current_position.current_price
+            current_symbol_exposure = abs(current_quantity * current_price)
+
+        if signal.signal == 'buy':
+            projected_quantity = current_quantity + signal.quantity
+        else:  # sell reduces or closes the position
+            projected_quantity = current_quantity - signal.quantity
+            # Clamp projections that would over-close due to rounding noise
+            if current_quantity >= 0 and projected_quantity < 0:
+                projected_quantity = 0.0
+
+        new_symbol_exposure = abs(projected_quantity * signal.price)
+        projected_exposure = total_exposure - current_symbol_exposure + new_symbol_exposure
+        exposure_pct = projected_exposure / max(balance, 1e-9)
+
+        risk_factors['current_exposure_pct'] = total_exposure / max(balance, 1e-9)
         risk_factors['new_exposure_pct'] = exposure_pct
 
         if exposure_pct > self.max_portfolio_exposure:

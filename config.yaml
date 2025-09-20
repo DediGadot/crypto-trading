@@ -145,6 +145,105 @@ alerts:
   error_count_threshold: 5  # Alert after 5 errors
   connection_timeout_threshold: 10  # Alert after 10 timeouts
 
+# Neural System Configuration (SAFLA Components)
+neural:
+  # Network architecture
+  input_dim: 64
+  output_dim: 8
+  hidden_dim: 128
+  dropout_rate: 0.1
+  learning_rate: 0.001
+
+  # Training thresholds
+  accuracy_threshold_low: 0.3  # Trigger immediate adaptation
+  accuracy_threshold_high: 0.8  # Success feedback threshold
+  loss_threshold_high: 5.0     # Error feedback threshold
+  loss_threshold_normal: 1.0   # Normal loss threshold
+
+  # Confidence and uncertainty
+  confidence_threshold: 0.6    # Minimum confidence for decisions
+  uncertainty_threshold: 0.5   # Maximum uncertainty allowed
+
+  # Performance stability
+  performance_window_size: 100 # Recent performance deque size
+  stability_min_samples: 10    # Minimum samples for stability calculation
+
+# Feedback System Configuration
+feedback:
+  # Learning cycles
+  cycle_timeout_seconds: 3600  # 1 hour timeout for learning cycles
+  max_feedback_buffer: 1000    # Maximum feedback signals to buffer
+
+  # Feedback thresholds
+  error_feedback_threshold: 0.8    # High error signal threshold
+  success_feedback_threshold: 0.8  # High success signal threshold
+  performance_feedback_min: 0.5    # Minimum for performance feedback
+
+  # Analysis parameters
+  trend_analysis_window: 50     # Window for trend analysis
+  pattern_analysis_samples: 20  # Samples for pattern analysis
+
+# Self-Improvement Configuration
+improvement:
+  # Candidate selection
+  min_confidence: 0.6          # Minimum confidence for implementation
+  min_impact_estimate: 0.05    # Minimum estimated impact
+  max_candidates_per_cycle: 3  # Maximum improvements per cycle
+
+  # Optimization parameters
+  parameter_adjustment_factor: 0.2  # Learning rate adjustment factor
+  architecture_growth_factor: 2.0   # Hidden layer size multiplier
+  rollback_failure_threshold: 0.3   # Performance drop for rollback
+
+  # Meta-learning
+  meta_learning_rate: 0.01     # Rate for meta-parameter updates
+  adaptation_frequency_limit: 5 # Max adaptations per hour
+
+# Coordination Configuration
+coordination:
+  # Background processing
+  coordination_interval_seconds: 60  # Coordination loop interval
+  health_check_interval: 300         # Health monitoring interval
+
+  # Threading
+  max_worker_threads: 4              # Maximum background threads
+  thread_timeout_seconds: 30         # Thread operation timeout
+
+  # Memory management
+  memory_optimization_interval: 600  # Memory cleanup interval
+  memory_usage_threshold: 0.8       # Memory usage alert threshold
+
+# Memory System Configuration
+memory:
+  # Vector memory
+  vector_dimension: 128         # Vector embedding dimension
+  vector_max_entries: 10000     # Maximum vector entries
+
+  # Episodic memory
+  episodic_max_entries: 50000   # Maximum episodic entries
+  episodic_similarity_threshold: 0.5  # Similarity for related episodes
+
+  # Semantic memory
+  semantic_max_entries: 10000   # Maximum semantic entries
+  knowledge_graph_max_depth: 3  # Maximum relationship traversal depth
+
+  # Working memory
+  working_memory_context_window: 100  # Context window size
+  working_memory_max_entries: 1000    # Maximum working memory entries
+  attention_weight_threshold: 0.7     # Minimum attention weight
+
+  # Compression settings
+  compression_ratio_target: 0.6       # Target compression ratio
+  importance_threshold_low: 0.2       # Low importance cleanup threshold
+
+  # Persistence settings
+  persistence_enabled: true           # Enable persistent storage
+  storage_directory: "data/memory"    # Base directory for memory storage
+  vector_cache_file: "vectors.pkl"    # Vector memory cache file
+  episodic_db_file: "episodic.db"     # Episodic memory SQLite database
+  semantic_cache_file: "semantic.pkl" # Semantic memory cache file
+  auto_save_interval: 300             # Auto-save interval in seconds
+
 # Development Settings
 development:
   debug_mode: false

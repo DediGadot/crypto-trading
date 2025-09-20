@@ -515,6 +515,14 @@ class TestNeuralCoordinator:
             # Should trigger immediate adaptation
             assert len(self.coordinator.coordination_state['adaptation_history']) > initial_adaptations
 
+    def test_architecture_adaptation(self):
+        """Test architecture adaptation adds a layer."""
+        initial_params = sum(p.numel() for p in self.coordinator.neural_network.parameters())
+        adaptation_params = {'action': 'add_hidden_layer', 'layer_size': 64}
+        self.coordinator._adapt_architecture(adaptation_params)
+        new_params = sum(p.numel() for p in self.coordinator.neural_network.parameters())
+        assert new_params > initial_params  # New layer added
+
     def test_performance_tracking(self):
         """Test performance tracking functionality."""
         # Add some predictions
