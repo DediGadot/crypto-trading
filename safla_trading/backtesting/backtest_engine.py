@@ -245,9 +245,23 @@ class BacktestEngine:
         Returns:
             Data with technical indicators
         """
-        # Simple moving averages
+        # Get strategy config for dynamic SMA periods
+        from ..config import get_config
+        config = get_config()
+        fast_period = config.get('strategy.fast_period', 5)
+        slow_period = config.get('strategy.slow_period', 20)
+
+        # Add dynamic SMAs based on config
+        data[f'SMA_{fast_period}'] = data['Close'].rolling(window=fast_period).mean()
+        data[f'SMA_{slow_period}'] = data['Close'].rolling(window=slow_period).mean()
+
+        # Legacy SMAs for compatibility
         data['SMA_20'] = data['Close'].rolling(window=20).mean()
         data['SMA_50'] = data['Close'].rolling(window=50).mean()
+
+        # Also add sma_5 and sma_20 (lowercase) for strategy
+        data['sma_5'] = data['Close'].rolling(window=5).mean()
+        data['sma_20'] = data['Close'].rolling(window=20).mean()
 
         # Exponential moving averages
         data['EMA_12'] = data['Close'].ewm(span=12).mean()

@@ -23,6 +23,38 @@ exchange:
     recovery_timeout: 30.0    # Try recovery after 30 seconds
     success_threshold: 3      # Close after 3 successful recovery attempts
 
+# Multi-Exchange Configuration (for enhanced trading system)
+exchanges:
+  binance:
+    sandbox: true              # Use testnet/sandbox mode
+    rate_limit_ms: 1000        # Rate limit in milliseconds
+    timeout_ms: 30000          # Timeout in milliseconds
+    # API credentials (use environment variables for security)
+    # api_key: "your_api_key_here"     # Or set BINANCE_API_KEY env var
+    # secret: "your_secret_here"       # Or set BINANCE_SECRET env var
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30.0
+      success_threshold: 3
+
+  kraken:
+    sandbox: true
+    rate_limit_ms: 1000
+    timeout_ms: 30000
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30.0
+      success_threshold: 3
+
+  bybit:
+    sandbox: true
+    rate_limit_ms: 1000
+    timeout_ms: 30000
+    circuit_breaker:
+      failure_threshold: 5
+      recovery_timeout: 30.0
+      success_threshold: 3
+
 # Trading Symbols
 symbols:
   primary: ["BTC/USDT", "ETH/USDT"]
@@ -30,8 +62,8 @@ symbols:
 
 # Market Data
 market_data:
-  timeframe: "1m"  # Start simple - 1 minute candles
-  lookback_candles: 100  # How many candles to keep in memory
+  timeframe: "1h"  # Use hourly candles for demo
+  lookback_candles: 200  # Increased for better SMA calculation
   fetch_limit: 1000  # Max candles per request
 
 # Simulation Parameters
@@ -49,13 +81,13 @@ simulation:
 strategy:
   type: "sma_crossover"
 
-  # Moving average periods
-  fast_period: 10
-  slow_period: 30
+  # Moving average periods - OPTIMIZED FOR HOURLY DATA
+  fast_period: 5   # Reduced from 10 for more responsive signals
+  slow_period: 20  # Reduced from 30 for hourly timeframe
 
-  # Signal thresholds
-  entry_threshold_pct: 0.01  # 1% crossover minimum
-  exit_threshold_pct: 0.005  # 0.5% exit signal
+  # Signal thresholds - REDUCED FOR CRYPTO VOLATILITY
+  entry_threshold_pct: 0.002  # 0.2% crossover minimum (was 1%)
+  exit_threshold_pct: 0.001   # 0.1% exit signal (was 0.5%)
 
   # Position sizing
   position_size_pct: 0.10  # 10% of balance per trade

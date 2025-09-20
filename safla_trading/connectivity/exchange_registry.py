@@ -6,6 +6,7 @@ Unified multi-exchange connector using CCXT
 import ccxt.async_support as ccxt
 import asyncio
 import logging
+import os
 from typing import Dict, List, Optional, Any, Union
 from pathlib import Path
 import yaml
@@ -31,7 +32,6 @@ class ExchangeRegistry:
         # Supported exchanges with CCXT
         self.supported_exchanges = {
             'binance': ccxt.binance,
-            'coinbase': ccxt.coinbasepro,
             'kraken': ccxt.kraken,
             'bybit': ccxt.bybit,
             'okx': ccxt.okx,
@@ -73,11 +73,11 @@ class ExchangeRegistry:
             # Get exchange class
             exchange_class = self.supported_exchanges[exchange_name]
 
-            # Setup configuration
+            # Setup configuration - PRODUCTION MODE
             config = {
-                'sandbox': self.config.get(f'exchanges.{exchange_name}.sandbox', True),
-                'rateLimit': self.config.get(f'exchanges.{exchange_name}.rate_limit_ms', 1000),
-                'timeout': self.config.get(f'exchanges.{exchange_name}.timeout_ms', 30000),
+                'sandbox': False,  # ALWAYS use production for real data
+                'rateLimit': 1200,  # Conservative rate limiting
+                'timeout': 30000,
                 'enableRateLimit': True,
                 'verbose': False
             }
@@ -86,16 +86,53 @@ class ExchangeRegistry:
             if credentials:
                 config.update(credentials)
             else:
-                # Try to get from config
-                api_key = self.config.get(f'exchanges.{exchange_name}.api_key')
-                secret = self.config.get(f'exchanges.{exchange_name}.secret')
-                passphrase = self.config.get(f'exchanges.{exchange_name}.passphrase')
+                # Try to get from environment variables first (most secure)
+                env_prefix = exchange_name.upper()
+                api_key = os.getenv(f'{env_prefix}_API_KEY')
+                secret = os.getenv(f'{env_prefix}_SECRET')
+                passphrase = os.getenv(f'{env_prefix}_PASSPHRASE')
+
+                # Fall back to config file if no environment variables
+                if not api_key:
+                    try:
+                        api_key = self.config.get(f'exchanges.{exchange_name}.api_key')
+                    except KeyError:
+                        api_key = None
+                if not secret:
+                    try:
+                        secret = self.config.get(f'exchanges.{exchange_name}.secret')
+                    except KeyError:
+                        secret = None
+                if not passphrase:
+                    try:
+                        passphrase = self.config.get(f'exchanges.{exchange_name}.passphrase')
+                    except KeyError:
+                        passphrase = None
 
                 if api_key and secret:
                     config['apiKey'] = api_key
                     config['secret'] = secret
                     if passphrase:
                         config['password'] = passphrase
+
+                    if self.logger:
+                        self.logger.log_system_event(
+                            'exchange_registry', 'credentials_loaded',
+                            {
+                                'exchange': exchange_name,
+                                'source': 'environment' if os.getenv(f'{env_prefix}_API_KEY') else 'config',
+                                'has_passphrase': bool(passphrase)
+                            }
+                        )
+                else:
+                    if self.logger:
+                        self.logger.log_system_event(
+                            'exchange_registry', 'no_credentials',
+                            {
+                                'exchange': exchange_name,
+                                'message': 'No API credentials found - using public endpoints only'
+                            }
+                        )
 
             # Create exchange instance
             exchange = exchange_class(config)

@@ -164,62 +164,91 @@ class PortfolioOptimizer:
             Optimization results
         """
         try:
-            # Use default constraints if not provided
-            if constraints is None:
-                constraints = self.default_constraints.copy()
+            # Ernie Chan: Adaptive constraint relaxation for robustness
+            constraint_sets = [
+                {'min_weight': 0.0, 'max_weight': 1.0},     # Most relaxed
+                {'min_weight': 0.01, 'max_weight': 0.60},   # Moderate
+                {'min_weight': 0.05, 'max_weight': 0.40},   # Conservative
+                {'min_weight': 0.10, 'max_weight': 0.30},   # Most strict
+            ]
 
-            # Calculate expected returns and risk model
-            mu = self.calculate_expected_returns(
-                prices,
-                kwargs.get('return_method', self.default_return_model),
-                **kwargs
-            )
-            S = self.calculate_risk_model(
-                prices,
-                kwargs.get('risk_method', self.default_risk_model),
-                **kwargs
-            )
+            for i, constraint_set in enumerate(constraint_sets):
+                try:
+                    print(f"   Trying constraint set {i+1}: min={constraint_set['min_weight']:.2f}, max={constraint_set['max_weight']:.2f}")
 
-            # Create efficient frontier
-            ef = EfficientFrontier(mu, S)
+                    # Calculate expected returns and risk model
+                    mu = self.calculate_expected_returns(
+                        prices,
+                        kwargs.get('return_method', self.default_return_model),
+                        **kwargs
+                    )
+                    S = self.calculate_risk_model(
+                        prices,
+                        kwargs.get('risk_method', self.default_risk_model),
+                        **kwargs
+                    )
 
-            # Add constraints
-            ef.add_constraint(lambda w: w >= constraints.get('min_weight', 0.01))
-            ef.add_constraint(lambda w: w <= constraints.get('max_weight', 0.30))
+                # Data quality checks
+                if mu.isna().any() or (mu == 0).all():
+                    print(f"   Warning: Issues with expected returns")
+                    continue
 
-            # Optimize based on objective
-            if objective == 'max_sharpe':
-                weights = ef.max_sharpe()
-            elif objective == 'min_volatility':
-                weights = ef.min_volatility()
-            elif objective == 'efficient_return':
-                target_return = kwargs.get('target_return', 0.10)
-                weights = ef.efficient_return(target_return)
-            elif objective == 'efficient_risk':
-                target_volatility = kwargs.get('target_volatility', 0.15)
-                weights = ef.efficient_risk(target_volatility)
-            else:
-                raise ValueError(f"Unknown objective: {objective}")
+                if np.linalg.cond(S) > 1e12:  # Check condition number
+                    print(f"   Warning: Ill-conditioned covariance matrix (cond={np.linalg.cond(S):.2e})")
+                    # Use shrinkage
+                    S = S + np.eye(len(S)) * 1e-6
 
-            # Get portfolio performance
-            performance = ef.portfolio_performance(verbose=False)
+                # Create efficient frontier
+                ef = EfficientFrontier(mu, S)
 
-            # Clean weights (remove tiny allocations)
-            cleaned_weights = ef.clean_weights()
+                # Add constraints if not most relaxed
+                if i > 0:
+                    ef.add_constraint(lambda w: w >= constraint_set['min_weight'])
+                    ef.add_constraint(lambda w: w <= constraint_set['max_weight'])
 
-            return {
-                'success': True,
-                'weights': cleaned_weights,
-                'expected_return': performance[0],
-                'volatility': performance[1],
-                'sharpe_ratio': performance[2],
-                'method': 'mean_variance',
-                'objective': objective,
-                'assets': list(prices.columns),
-                'optimization_date': datetime.now()
-            }
+                # Optimize based on objective
+                if objective == 'max_sharpe':
+                    weights = ef.max_sharpe()
+                elif objective == 'min_volatility':
+                    weights = ef.min_volatility()
+                elif objective == 'efficient_return':
+                    target_return = kwargs.get('target_return', 0.10)
+                    weights = ef.efficient_return(target_return)
+                elif objective == 'efficient_risk':
+                    target_volatility = kwargs.get('target_volatility', 0.15)
+                    weights = ef.efficient_risk(target_volatility)
+                else:
+                    raise ValueError(f"Unknown objective: {objective}")
 
-        except Exception as e:
+                # Get portfolio performance
+                performance = ef.portfolio_performance(verbose=False)
+
+                # Clean weights (remove tiny allocations)
+                cleaned_weights = ef.clean_weights()
+
+                print(f"   Success with constraint set {i+1}")
+                break  # Success, exit loop
+
+            except Exception as constraint_error:
+                print(f"   Failed with constraint set {i+1}: {str(constraint_error)[:100]}")
+                if i == len(constraint_sets) - 1:  # Last attempt
+                    raise constraint_error
+                continue
+
+        return {
+            'success': True,
+            'weights': cleaned_weights,
+            'expected_return': performance[0],
+            'volatility': performance[1],
+            'sharpe_ratio': performance[2],
+            'method': 'mean_variance',
+            'objective': objective,
+            'assets': list(prices.columns),
+            'constraint_set_used': i+1,
+            'optimization_date': datetime.now()
+        }
+
+    except Exception as e:
             if self.logger:
                 self.logger.log_error(
                     'portfolio_optimizer', 'mv_optimization_failed',
@@ -249,12 +278,14 @@ class PortfolioOptimizer:
             # Optimize
             weights = hrp.optimize()
 
-            # Calculate portfolio performance
-            portfolio_return = np.sum(weights * returns.mean() * 252)
+            # Calculate portfolio performance with proper frequency
+            frequency = kwargs.get('frequency', 252)  # Use passed frequency
+            portfolio_return = np.sum(weights * returns.mean() * frequency)
             portfolio_vol = np.sqrt(
-                np.dot(weights, np.dot(returns.cov() * 252, weights))
+                np.dot(weights, np.dot(returns.cov() * frequency, weights))
             )
             sharpe_ratio = portfolio_return / portfolio_vol if portfolio_vol > 0 else 0
+            print(f"   HRP Sharpe: {sharpe_ratio:.4f}, Return: {portfolio_return:.4f}")
 
             return {
                 'success': True,

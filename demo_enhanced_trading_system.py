@@ -11,6 +11,10 @@ import logging
 import sys
 import time
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add project root to Python path
 sys.path.append(str(Path(__file__).parent))
@@ -44,69 +48,88 @@ class EnhancedTradingDemo:
         self.symbols = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT', 'DOT/USDT']
         self.demo_results = {}
 
-    def generate_demo_data(self, symbol: str, days: int = 365) -> pd.DataFrame:
-        """Generate realistic demo data
+    async def get_real_market_data(self, symbol: str, timeframe: str = '1h', limit: int = 2000) -> pd.DataFrame:
+        """Get real market data from Binance
 
         Args:
-            symbol: Trading symbol
-            days: Number of days of data
+            symbol: Trading symbol (e.g., 'BTC/USDT')
+            timeframe: Timeframe ('1m', '5m', '1h', '1d', etc.)
+            limit: Number of candles to fetch
 
         Returns:
-            OHLCV data
+            Real OHLCV data from Binance
         """
-        print(f"📊 Generating demo data for {symbol}...")
+        print(f"📊 Fetching real market data for {symbol} ({timeframe})...")
 
-        # Create realistic price data with trends and volatility
-        np.random.seed(42)  # For reproducible results
+        try:
+            # Get exchange registry
+            registry = await get_exchange_registry(self.logger)
 
-        # Base price and parameters
-        base_price = 50000 if 'BTC' in symbol else (3000 if 'ETH' in symbol else 1.0)
+            # Initialize Binance
+            success = await registry.initialize_exchange('binance')
+            if not success:
+                raise Exception("Failed to connect to Binance")
 
-        # Generate hourly data
-        periods = days * 24
-        dates = pd.date_range(start=datetime.now() - timedelta(days=days),
-                            periods=periods, freq='H')
+            # Fetch historical data with increased limit for statistical significance
+            # Ernie Chan: Need n >> p (samples >> parameters)
+            actual_limit = max(limit, 2000)  # Ensure minimum 2000 samples
+            candles = await registry.get_historical_data(
+                symbol, timeframe, limit=actual_limit, exchange_name='binance'
+            )
 
-        # Simulate price evolution with trends and noise
-        returns = np.random.normal(0.0001, 0.02, periods)  # Small upward drift with volatility
+            if not candles:
+                raise Exception(f"No data received for {symbol}")
 
-        # Add some trending periods
-        trend_periods = np.random.choice(periods, size=periods//10, replace=False)
-        returns[trend_periods] += np.random.normal(0.005, 0.01, len(trend_periods))
+            # Convert to DataFrame
+            data = []
+            for candle in candles:
+                data.append({
+                    'timestamp': pd.to_datetime(candle['timestamp'], unit='ms'),
+                    'open': float(candle['open']),
+                    'high': float(candle['high']),
+                    'low': float(candle['low']),
+                    'close': float(candle['close']),
+                    'volume': float(candle['volume'])
+                })
 
-        # Calculate prices
-        prices = base_price * np.exp(np.cumsum(returns))
+            df = pd.DataFrame(data)
+            df.set_index('timestamp', inplace=True)
+            df = df.sort_index()
 
-        # Generate OHLCV data
-        data = []
-        for i, (date, close) in enumerate(zip(dates, prices)):
-            # Generate realistic OHLC from close price
-            volatility = abs(returns[i]) * close
-            high = close + np.random.exponential(volatility * 0.5)
-            low = close - np.random.exponential(volatility * 0.5)
-            open_price = prices[i-1] if i > 0 else close
+            # Data quality checks (Ernie Chan's approach)
+            returns = df['close'].pct_change()
 
-            # Ensure OHLC consistency
-            high = max(high, open_price, close)
-            low = min(low, open_price, close)
+            # Check for sufficient variance
+            if returns.std() < 1e-6:
+                print(f"⚠️ Warning: Insufficient price variation (std={returns.std():.6f})")
 
-            # Volume (inversely related to price for realism)
-            volume = np.random.exponential(1000000 / (close / base_price))
+            # Check for data gaps
+            time_diff = df.index.to_series().diff()
+            max_gap = time_diff.max()
+            if max_gap > pd.Timedelta(hours=2):
+                print(f"⚠️ Warning: Data gaps detected (max gap: {max_gap})")
 
-            data.append({
-                'timestamp': date,
-                'open': open_price,
-                'high': high,
-                'low': low,
-                'close': close,
-                'volume': volume
-            })
+            # Check for outliers using Median Absolute Deviation
+            median_return = returns.median()
+            mad = (returns - median_return).abs().median()
+            outliers = (returns - median_return).abs() > (5 * mad)
+            if outliers.sum() > 0:
+                print(f"⚠️ Warning: {outliers.sum()} outlier returns detected")
 
-        df = pd.DataFrame(data)
-        df.set_index('timestamp', inplace=True)
+            print(f"✅ Fetched {len(df)} real data points for {symbol}")
+            print(f"   Date range: {df.index[0]} to {df.index[-1]}")
+            print(f"   Current price: ${df['close'].iloc[-1]:.2f}")
+            print(f"   Return std: {returns.std():.6f}")
+            print(f"   Sharpe (hourly): {returns.mean()/returns.std() if returns.std() > 0 else 0:.4f}")
 
-        print(f"✅ Generated {len(df)} data points for {symbol}")
-        return df
+            # Close registry
+            await registry.close_all()
+
+            return df
+
+        except Exception as e:
+            print(f"❌ Failed to fetch real data for {symbol}: {e}")
+            raise
 
     async def demo_exchange_connectivity(self):
         """Demonstrate multi-exchange connectivity"""
@@ -122,6 +145,19 @@ class EnhancedTradingDemo:
 
             for exchange_name in exchanges_to_test:
                 print(f"🔌 Initializing {exchange_name}...")
+
+                # Check for API credentials first
+                import os
+                env_prefix = exchange_name.upper()
+                has_env_credentials = bool(os.getenv(f'{env_prefix}_API_KEY') and os.getenv(f'{env_prefix}_SECRET'))
+
+                if not has_env_credentials:
+                    print(f"ℹ️  No API credentials found for {exchange_name}")
+                    print(f"   To connect, set environment variables:")
+                    print(f"   export {env_prefix}_API_KEY='your_api_key'")
+                    print(f"   export {env_prefix}_SECRET='your_secret'")
+                    print(f"   Continuing with demo data...")
+
                 success = await registry.initialize_exchange(exchange_name)
 
                 if success:
@@ -137,6 +173,10 @@ class EnhancedTradingDemo:
 
                 else:
                     print(f"❌ Failed to connect to {exchange_name}")
+                    if not has_env_credentials:
+                        print(f"   (Expected - no API credentials provided)")
+                    else:
+                        print(f"   (Check your API credentials and permissions)")
 
             # Test unified data fetching
             if registry.exchanges:
@@ -160,13 +200,14 @@ class EnhancedTradingDemo:
             print(f"❌ Exchange connectivity error: {e}")
             print("⚠️ Continuing with generated demo data...")
 
-    def demo_statistical_forecasting(self):
-        """Demonstrate statistical forecasting"""
+    async def demo_statistical_forecasting(self):
+        """Demonstrate statistical forecasting with real data"""
         print("\n📈 STATISTICAL FORECASTING DEMO")
         print("=" * 50)
 
         symbol = 'BTC/USDT'
-        data = self.generate_demo_data(symbol, days=180)
+        # Ernie Chan: Use sufficient data for statistical significance
+        data = await self.get_real_market_data(symbol, '1h', 2000)  # ~83 days for robust testing
 
         try:
             # Prepare data for forecasting
@@ -222,13 +263,14 @@ class EnhancedTradingDemo:
         except Exception as e:
             print(f"❌ Forecasting error: {e}")
 
-    def demo_gbdt_models(self):
-        """Demonstrate GBDT models with optimization"""
+    async def demo_gbdt_models(self):
+        """Demonstrate GBDT models with optimization using real data"""
         print("\n🚀 GBDT MODELS WITH OPTUNA OPTIMIZATION DEMO")
         print("=" * 50)
 
         symbol = 'ETH/USDT'
-        data = self.generate_demo_data(symbol, days=200)
+        # Ernie Chan: Ensure n >> p for ML training
+        data = await self.get_real_market_data(symbol, '1h', 2000)  # ~83 days for ML validation
 
         try:
             # Test each available model type
@@ -252,20 +294,21 @@ class EnhancedTradingDemo:
                     target_horizon=1, optimize=True, n_trials=10
                 )
 
-                if result['success']:
+                if result.get('success', False):
                     print(f"✅ {model_type} training completed")
                     print(f"   Validation RMSE: {result['metrics']['val_rmse']:.6f}")
                     print(f"   Validation R²: {result['metrics']['val_r2']:.4f}")
 
                     # Show top features
-                    top_features = result['feature_importance'][:3]
-                    print("   Top features:")
-                    for feature, importance in top_features:
-                        print(f"      {feature}: {importance:.4f}")
+                    top_features = result.get('feature_importance', [])[:3]
+                    if top_features:
+                        print("   Top features:")
+                        for feature, importance in top_features:
+                            print(f"      {feature}: {importance:.4f}")
 
                     trained_models.append(model_type)
                 else:
-                    print(f"❌ {model_type} training failed: {result['error']}")
+                    print(f"❌ {model_type} training failed: {result.get('error', 'Unknown error')}")
 
             # Generate ensemble signals
             if trained_models:
@@ -286,16 +329,17 @@ class EnhancedTradingDemo:
         except Exception as e:
             print(f"❌ GBDT modeling error: {e}")
 
-    def demo_portfolio_optimization(self):
-        """Demonstrate portfolio optimization"""
+    async def demo_portfolio_optimization(self):
+        """Demonstrate portfolio optimization with real data"""
         print("\n💼 PORTFOLIO OPTIMIZATION DEMO")
         print("=" * 50)
 
         try:
-            # Generate price data for multiple assets
+            # Fetch real price data for multiple assets
             price_data = {}
             for symbol in self.symbols:
-                data = self.generate_demo_data(symbol, days=120)
+                # Portfolio optimization needs more data for stable covariance
+                data = await self.get_real_market_data(symbol, '1h', 1000)  # ~42 days minimum
                 price_data[symbol] = data['close']
 
             print(f"📊 Generated price data for {len(self.symbols)} assets")
@@ -304,10 +348,17 @@ class EnhancedTradingDemo:
             price_df = self.portfolio_optimizer.prepare_price_data(price_data)
             print(f"📈 Using {len(price_df)} periods for optimization")
 
+            # CRITICAL FIX: Convert to returns and adjust frequency for hourly data
+            # PyPortfolioOpt expects daily data, we have hourly
+            frequency = 24 * 365  # Hourly periods in a year
+
             # Mean-Variance Optimization
             print("\n🎯 Mean-Variance Optimization (Max Sharpe)...")
             mv_result = self.portfolio_optimizer.optimize_mean_variance(
-                price_df, objective='max_sharpe'
+                price_df, objective='max_sharpe',
+                frequency=frequency,  # Pass hourly frequency
+                return_method='mean_historical_return',
+                risk_method='ledoit_wolf'  # More stable for crypto
             )
 
             if mv_result['success']:
@@ -324,7 +375,10 @@ class EnhancedTradingDemo:
 
             # Hierarchical Risk Parity
             print("\n⚖️ Hierarchical Risk Parity...")
-            hrp_result = self.portfolio_optimizer.optimize_hierarchical_risk_parity(price_df)
+            hrp_result = self.portfolio_optimizer.optimize_hierarchical_risk_parity(
+                price_df,
+                frequency=frequency  # Pass hourly frequency
+            )
 
             if hrp_result['success']:
                 print("✅ HRP optimization completed")
@@ -370,36 +424,57 @@ class EnhancedTradingDemo:
         except Exception as e:
             print(f"❌ Portfolio optimization error: {e}")
 
-    def demo_backtesting_engine(self):
-        """Demonstrate backtesting capabilities"""
+    async def demo_backtesting_engine(self):
+        """Demonstrate backtesting capabilities with real data"""
         print("\n📉 BACKTESTING ENGINE DEMO")
         print("=" * 50)
 
         try:
             # Create a simple strategy for demonstration
             class SimpleMovingAverageStrategy:
-                """Simple moving average crossover strategy"""
+                """Improved moving average crossover strategy for crypto"""
 
                 def initialize(self, state):
                     """Initialize strategy"""
                     state['position'] = 0
                     state['signals'] = []
+                    state['prev_sma_5'] = None
+                    state['prev_sma_20'] = None
 
                 def on_bar(self, bar, state, portfolio_info):
-                    """Process new bar"""
-                    # Simple moving average crossover logic
+                    """Process new bar with improved logic"""
+                    # Use faster SMAs for hourly crypto data
+                    sma_5 = bar.get('sma_5', bar['close'])
                     sma_20 = bar.get('sma_20', bar['close'])
-                    sma_50 = bar.get('sma_50', bar['close'])
 
                     current_position = portfolio_info.get('current_position', 0)
 
-                    # Buy signal: SMA20 crosses above SMA50
-                    if sma_20 > sma_50 and current_position <= 0:
-                        return {'action': 'buy', 'size': 0.95}  # Use 95% of capital
+                    # Track previous values for crossover detection
+                    if state['prev_sma_5'] is not None and state['prev_sma_20'] is not None:
+                        prev_5 = state['prev_sma_5']
+                        prev_20 = state['prev_sma_20']
 
-                    # Sell signal: SMA20 crosses below SMA50
-                    elif sma_20 < sma_50 and current_position > 0:
-                        return {'action': 'sell'}
+                        # Detect crossovers with momentum confirmation
+                        golden_cross = prev_5 <= prev_20 and sma_5 > sma_20
+                        death_cross = prev_5 >= prev_20 and sma_5 < sma_20
+
+                        # Buy signal: Golden cross with momentum
+                        if golden_cross and current_position <= 0:
+                            # Check momentum (price above both SMAs)
+                            if bar['close'] > sma_20:
+                                return {'action': 'buy', 'size': 0.95}
+
+                        # Sell signal: Death cross or stop loss
+                        elif death_cross and current_position > 0:
+                            return {'action': 'sell'}
+                        elif current_position > 0:
+                            # Trailing stop: sell if price drops 2% below SMA20
+                            if bar['close'] < sma_20 * 0.98:
+                                return {'action': 'sell'}
+
+                    # Update state
+                    state['prev_sma_5'] = sma_5
+                    state['prev_sma_20'] = sma_20
 
                     return None
 
@@ -407,17 +482,17 @@ class EnhancedTradingDemo:
             strategy = SimpleMovingAverageStrategy()
             self.backtest_engine.register_strategy('sma_crossover', strategy)
 
-            # Generate test data
+            # Get real test data - STATISTICALLY SIGNIFICANT SAMPLE
             symbol = 'BTC/USDT'
-            data = self.generate_demo_data(symbol, days=90)
+            data = await self.get_real_market_data(symbol, '1h', 2000)  # ~83 days for robust backtesting
 
             print(f"📊 Running backtest on {len(data)} data points...")
 
-            # Configure backtest
+            # Configure backtest with realistic crypto settings
             config = BacktestConfig(
                 initial_cash=100000,
-                commission=0.002,  # 0.2% commission
-                slippage_value=0.001  # 0.1% slippage
+                commission=0.001,  # 0.1% commission (Binance rate)
+                slippage_value=0.0005  # 0.05% slippage (tighter for liquid pairs)
             )
 
             # Run backtest
@@ -449,8 +524,8 @@ class EnhancedTradingDemo:
         except Exception as e:
             print(f"❌ Backtesting error: {e}")
 
-    def demo_performance_improvements(self):
-        """Demonstrate performance improvements"""
+    async def demo_performance_improvements(self):
+        """Demonstrate performance improvements with real data"""
         print("\n⚡ PERFORMANCE IMPROVEMENTS DEMO")
         print("=" * 50)
 
@@ -458,9 +533,9 @@ class EnhancedTradingDemo:
             # Test data processing speed
             print("🚀 Testing data processing performance...")
 
-            # Generate large dataset
-            large_data = self.generate_demo_data('BTC/USDT', days=365)
-            print(f"📊 Generated dataset with {len(large_data)} data points")
+            # Get large real dataset for performance testing
+            large_data = await self.get_real_market_data('BTC/USDT', '1h', 1500)  # ~62 days for performance analysis
+            print(f"📊 Using real dataset with {len(large_data)} data points")
 
             # Time feature engineering
             import time
@@ -513,6 +588,7 @@ class EnhancedTradingDemo:
         print("\n🏆 UPGRADE COMPARISON:")
         print("   Before: Basic SAFLA system with limited data sources")
         print("   After:  Production-grade system with:")
+        print("          - REAL Binance data integration (no mock/demo data)")
         print("          - Multi-exchange data aggregation")
         print("          - State-of-the-art forecasting models")
         print("          - Optimized ML models with hyperparameter tuning")
@@ -534,13 +610,13 @@ class EnhancedTradingDemo:
         print("Demonstrating significant algorithmic trading upgrades...")
         print("Integration of high-star, state-of-the-art open-source components")
 
-        # Run all demos
+        # Run all demos with real data
         await self.demo_exchange_connectivity()
-        self.demo_statistical_forecasting()
-        self.demo_gbdt_models()
-        self.demo_portfolio_optimization()
-        self.demo_backtesting_engine()
-        self.demo_performance_improvements()
+        await self.demo_statistical_forecasting()
+        await self.demo_gbdt_models()
+        await self.demo_portfolio_optimization()
+        await self.demo_backtesting_engine()
+        await self.demo_performance_improvements()
 
         # Print final summary
         self.print_demo_summary()
